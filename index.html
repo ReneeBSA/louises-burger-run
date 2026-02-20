@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Louise's Burger Run</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#07070f;
+  display:flex; flex-direction:column; align-items:center;
+  min-height:100vh; padding:12px 8px;
+  font-family:'Courier New',monospace; color:#ddd;
+  user-select:none;
+}
+h1 {
+  color:#ff69b4;
+  text-shadow:0 0 8px #ff69b4, 0 0 20px #ff1493;
+  font-size:1.5rem; letter-spacing:4px; margin-bottom:6px;
+}
+#hud {
+  display:flex; justify-content:space-between;
+  width:588px; padding:4px 2px; font-size:13px; color:#aaa;
+}
+#hud b { color:#ff69b4; }
+#wrap { position:relative; width:588px; height:588px; }
+canvas { display:block; border:2px solid #3a005a;
+  box-shadow:0 0 20px #3a005a; }
+#ov {
+  position:absolute; inset:0;
+  background:rgba(7,7,15,0.9);
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:14px;
+  border:2px solid #3a005a;
+}
+#ov h2 { color:#ff69b4; font-size:1.4rem; letter-spacing:3px;
+  text-shadow:0 0 10px #ff1493; }
+#ov p { color:#ccc; font-size:13px; text-align:center;
+  line-height:1.9; max-width:380px; }
+#ov button {
+  background:#4a0080; color:#fff; border:1px solid #9000ff;
+  padding:10px 30px; font-size:15px; font-family:inherit;
+  cursor:pointer; letter-spacing:2px;
+}
+#ov button:hover { background:#6a00b0; }
+#burger {
+  width:588px; padding:8px 2px 0;
+  font-size:11px; color:#888; letter-spacing:1px;
+}
+#burger .lbl { color:#ff69b4; display:block; margin-bottom:4px; }
+#slots { display:flex; gap:5px; flex-wrap:wrap; }
+.slot {
+  width:60px; text-align:center; padding:4px 2px;
+  border:1px solid #2a2a2a; border-radius:4px;
+  font-size:10px; color:#444; transition:all .3s;
+}
+.slot.got { border-color:#ff69b4; color:#ff69b4;
+  text-shadow:0 0 5px #ff69b4; background:rgba(255,105,180,.1); }
+.slot .em { font-size:18px; display:block; }
+#info { margin-top:8px; font-size:11px; color:#333; text-align:center; }
+#pbar { height:3px; background:#ff6b35;
+  box-shadow:0 0 6px #ff6b35; width:0; transition:width .1s; }
+</style>
+</head>
+<body>
+<h1>LOUISE'S BURGER RUN</h1>
+<div id="hud">
+  <div>SCORE <b id="sc">0</b></div>
+  <div>LEVEL <b id="lv">1</b></div>
+  <div>LIVES <b id="li">♥ ♥ ♥</b></div>
+</div>
+<div id="wrap">
+  <canvas id="c" width="588" height="588"></canvas>
+  <div id="ov">
+    <h2 id="ovT">LOUISE'S BURGER RUN</h2>
+    <p id="ovP">Collect all 8 burger ingredients!<br>
+      Grab a Power Patty to scare Kuchi Kopi!<br><br>
+      Arrow Keys / WASD to move · Space = Pause</p>
+    <div id="pbar"></div>
+    <button id="ovB">START GAME</button>
+  </div>
+</div>
+<div id="burger">
+  <span class="lbl">BURGER PROGRESS:</span>
+  <div id="slots"></div>
+</div>
+<div id="info">ARROW KEYS / WASD &nbsp;·&nbsp; SPACE = PAUSE</div>
+
+<script>
+// ── CONSTANTS ─────────────────────────────────────────────────────
+const T = 28, COLS = 21, ROWS = 21, W = COLS*T, H = ROWS*T;
+const POWER_DUR = 300;
+
+// ── MAZE ──────────────────────────────────────────────────────────
+// 0=dot 1=wall 2=eaten 3=powerPatty 4=ghostHouse 5=ingredient
+const MT = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,1,1,0,1,1,1,0,1,1,1,0,1,1,0,1],
+  [1,3,1,1,0,1,1,1,0,1,1,1,0,1,1,1,0,1,1,3,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,1,0,1],
+  [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],
+  [1,1,1,1,0,1,1,1,0,0,0,0,0,1,1,1,0,1,1,1,1],
+  [1,1,1,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1],
+  [1,1,1,1,0,1,0,1,1,2,2,2,1,1,0,1,0,1,1,1,1],
+  [0,0,0,0,0,0,0,1,2,4,4,4,2,1,0,0,0,0,0,0,0],
+  [1,1,1,1,0,1,0,1,1,2,2,2,1,1,0,1,0,1,1,1,1],
+  [1,1,1,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1],
+  [1,1,1,1,0,1,1,1,0,0,0,0,0,1,1,1,0,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,1,1,0,1,1,1,0,1,1,1,0,1,1,0,1],
+  [1,3,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,3,1],
+  [1,1,0,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,0,1,1],
+  [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],
+  [1,0,1,1,1,1,1,1,0,1,1,1,0,1,1,1,1,1,1,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+];
+
+// ── INGREDIENTS ───────────────────────────────────────────────────
+const INGS = [
+  { name:'Bun Top',    em:'🍞', color:'#F4A460', pos:[1,5]   },
+  { name:'Patty',      em:'🥩', color:'#8B4513', pos:[4,10]  },
+  { name:'Cheese',     em:'🧀', color:'#FFA500', pos:[6,2]   },
+  { name:'Lettuce',    em:'🥬', color:'#32CD32', pos:[18,9]  },
+  { name:'Tomato',     em:'🍅', color:'#FF4500', pos:[1,15]  },
+  { name:'Pickle',     em:'🥒', color:'#228B22', pos:[18,3]  },
+  { name:'Bacon',      em:'🥓', color:'#C0392B', pos:[18,17] },
+  { name:'Bun Bottom', em:'🍞', color:'#DEB887', pos:[14,11] },
+];
+
+// ── STATE ─────────────────────────────────────────────────────────
+let maze = [], score = 0, lives = 3, level = 1;
+let gs = 'start';   // game state
+let powerTimer = 0, collected = new Set(), deathCD = 0;
+
+function freshMaze() {
+  maze = MT.map(r => [...r]);
+  INGS.forEach(({pos:[r,c]}) => { maze[r][c] = 5; });
+}
+
+// ── PLAYER ────────────────────────────────────────────────────────
+// Movement is fraction-based: progress 0→1 means moving one cell
+const PL = {
+  r:16, c:10,         // grid cell
+  dx:0, dy:0,         // current direction (col delta, row delta)
+  ndx:0, ndy:0,       // queued direction
+  prog:0,             // 0..1 progress toward next cell
+  speed:0.13,         // cells per frame
+  anim:0,
+};
+function resetPL() {
+  Object.assign(PL, {r:16,c:10,dx:0,dy:0,ndx:0,ndy:0,prog:0,anim:0});
+}
+// Interpolated pixel position
+function plPx() { return (PL.c + PL.dx * PL.prog) * T + T/2; }
+function plPy() { return (PL.r + PL.dy * PL.prog) * T + T/2; }
+
+// ── KUCHI KOPI ────────────────────────────────────────────────────
+class KK {
+  constructor(r, c, hue) {
+    this.hr=r; this.hc=c; this.hue=hue;
+    this.reset();
+  }
+  reset() {
+    this.r=this.hr; this.c=this.hc;
+    this.dx=0; this.dy=1;
+    this.prog=0;
+    this.scared=false; this.dead=false; this.flash=false;
+  }
+  px() { return (this.c + this.dx * this.prog) * T + T/2; }
+  py() { return (this.r + this.dy * this.prog) * T + T/2; }
+}
+let kks = [];
+function initKKs() {
+  kks = [new KK(1,2,120), new KK(1,18,160), new KK(14,2,90)];
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────
+function open(r, c) {
+  if (r<0||r>=ROWS||c<0||c>=COLS) return false;
+  return maze[r][c] !== 1;
+}
+function openPL(r, c) {
+  if (r<0||r>=ROWS||c<0||c>=COLS) return false;
+  const v = maze[r][c];
+  return v!==1 && v!==4;
+}
+
+// ── CANVAS ────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// ── DRAW MAZE ─────────────────────────────────────────────────────
+function drawMaze() {
+  if (!maze.length) return;
+  for (let r=0; r<ROWS; r++) {
+    for (let c=0; c<COLS; c++) {
+      const v = maze[r][c];
+      const x = c*T, y = r*T;
+      if (v === 1) {
+        ctx.fillStyle = '#11002a';
+        ctx.fillRect(x, y, T, T);
+        ctx.strokeStyle = '#5500aa';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x+1.5, y+1.5, T-3, T-3);
+      } else {
+        ctx.fillStyle = v===4 ? '#0c001e' : '#07070f';
+        ctx.fillRect(x, y, T, T);
+        if (v === 0) {
+          ctx.fillStyle = '#e8b800';
+          ctx.beginPath();
+          ctx.arc(x+T/2, y+T/2, 2.5, 0, Math.PI*2);
+          ctx.fill();
+        } else if (v === 3) {
+          ctx.shadowColor = '#ff6b35';
+          ctx.shadowBlur = 10;
+          ctx.fillStyle = '#ff6b35';
+          ctx.beginPath();
+          ctx.arc(x+T/2, y+T/2, 6, 0, Math.PI*2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      }
+    }
+  }
+}
+
+// ── DRAW INGREDIENTS ─────────────────────────────────────────────
+function drawIngredients() {
+  if (!maze.length) return;
+  INGS.forEach(({em, color, pos:[ir,ic]}) => {
+    if (maze[ir][ic] !== 5) return;
+    const x = ic*T + T/2, y = ir*T + T/2;
+    // Glowing background circle
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, 11, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Emoji
+    ctx.font = '14px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(em, x, y+1);
+  });
+}
+
+// ── DRAW LOUISE ───────────────────────────────────────────────────
+function drawLouise() {
+  const x = plPx(), y = plPy();
+  ctx.save();
+  ctx.translate(x, y);
+
+  const bob = Math.sin(PL.anim * 0.18) * 2.5;
+
+  // Pink glow halo — makes her visible even when still
+  ctx.shadowColor = '#ff69b4';
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = 'rgba(255,105,180,0.25)';
+  ctx.beginPath();
+  ctx.arc(0, 0, 17, 0, Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // ── Bunny ears ──
+  // Outer ear left
+  ctx.fillStyle = '#ffaed0';
+  ctx.beginPath();
+  ctx.moveTo(-8, -8);
+  ctx.bezierCurveTo(-10, -20+bob, -7, -28+bob, -4, -24+bob);
+  ctx.bezierCurveTo(-1, -20+bob, -2, -12, -4, -8);
+  ctx.closePath();
+  ctx.fill();
+  // Inner ear left
+  ctx.fillStyle = '#ff5090';
+  ctx.beginPath();
+  ctx.moveTo(-7, -9);
+  ctx.bezierCurveTo(-8, -18+bob, -6, -24+bob, -4, -21+bob);
+  ctx.bezierCurveTo(-2, -18+bob, -3, -12, -5, -9);
+  ctx.closePath();
+  ctx.fill();
+
+  // Outer ear right
+  ctx.fillStyle = '#ffaed0';
+  ctx.beginPath();
+  ctx.moveTo(4, -8);
+  ctx.bezierCurveTo(2, -12, 1, -20+bob, 4, -24+bob);
+  ctx.bezierCurveTo(7, -28+bob, 10, -20+bob, 8, -8);
+  ctx.closePath();
+  ctx.fill();
+  // Inner ear right
+  ctx.fillStyle = '#ff5090';
+  ctx.beginPath();
+  ctx.moveTo(5, -9);
+  ctx.bezierCurveTo(3, -12, 2, -18+bob, 4, -21+bob);
+  ctx.bezierCurveTo(6, -24+bob, 8, -18+bob, 7, -9);
+  ctx.closePath();
+  ctx.fill();
+
+  // ── Head ──
+  ctx.fillStyle = '#ffdab9';
+  ctx.shadowColor = '#ff69b4';
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.arc(0, 0, 12, 0, Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // ── Eyes ──
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.arc(-4, -2, 3.2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(4, -2, 3.2, 0, Math.PI*2);  ctx.fill();
+  // Shine
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(-2.8, -3.2, 1.1, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(5.2, -3.2, 1.1, 0, Math.PI*2);  ctx.fill();
+
+  // ── Smirk ──
+  ctx.strokeStyle = '#a0522d';
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-4, 3.5);
+  ctx.quadraticCurveTo(0, 7.5, 5, 4);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// ── DRAW KUCHI KOPI ───────────────────────────────────────────────
+function drawKK(kk) {
+  if (kk.dead) return;
+  const x = kk.px(), y = kk.py();
+  ctx.save();
+  ctx.translate(x, y);
+
+  const pulse = Math.sin(Date.now()/450 + kk.hue*0.1) * 0.12 + 0.88;
+  const gc = kk.scared ? '#2222ff' : `hsl(${kk.hue},100%,55%)`;
+  const bc = kk.scared
+    ? (kk.flash ? '#aaaaff' : '#3333bb')
+    : `hsl(${kk.hue},100%,${Math.round(44*pulse)}%)`;
+
+  // Glow
+  ctx.shadowColor = gc;
+  ctx.shadowBlur = 16;
+
+  // Ghost body
+  ctx.fillStyle = bc;
+  ctx.beginPath();
+  ctx.arc(0, -3, 9, Math.PI, 0);
+  ctx.lineTo(9, 5);
+  ctx.quadraticCurveTo(6.5, 9.5, 3, 5);
+  ctx.quadraticCurveTo(0, 9.5, -3, 5);
+  ctx.quadraticCurveTo(-6.5, 9.5, -9, 5);
+  ctx.lineTo(-9, -3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Eyes
+  if (kk.scared) {
+    ctx.strokeStyle = '#ccccff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-5,-4); ctx.quadraticCurveTo(-3.5,-7.5,-2,-4); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(2,-4);  ctx.quadraticCurveTo(3.5,-7.5,5,-4);   ctx.stroke();
+  } else {
+    ctx.fillStyle = '#c8ffc8';
+    ctx.beginPath(); ctx.ellipse(-3.5,-5,3,4,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(3.5,-5,3,4,0,0,Math.PI*2);  ctx.fill();
+    ctx.fillStyle = '#002200';
+    ctx.beginPath(); ctx.arc(-3.5,-5,1.8,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(3.5,-5,1.8,0,Math.PI*2);  ctx.fill();
+    ctx.fillStyle = '#88ff88';
+    ctx.beginPath(); ctx.arc(-2.3,-6,0.9,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(4.7,-6,0.9,0,Math.PI*2);  ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ── STEP PLAYER ───────────────────────────────────────────────────
+function stepPL() {
+  PL.anim++;
+
+  // If standing still, try to start from queued input
+  if (PL.dx === 0 && PL.dy === 0) {
+    if (PL.ndx !== 0 || PL.ndy !== 0) {
+      if (openPL(PL.r + PL.ndy, PL.c + PL.ndx)) {
+        PL.dx = PL.ndx; PL.dy = PL.ndy;
+        PL.prog = 0;
+        eatTile(PL.r, PL.c);
+      }
+    }
+    return;
+  }
+
+  PL.prog += PL.speed;
+  if (PL.prog >= 1) {
+    // Arrive at next cell
+    PL.r += PL.dy;
+    PL.c += PL.dx;
+    PL.prog = 0;
+    if (PL.c < 0)     PL.c = COLS-1;
+    if (PL.c >= COLS) PL.c = 0;
+
+    eatTile(PL.r, PL.c);
+
+    // Apply queued direction if valid
+    if ((PL.ndx !== 0 || PL.ndy !== 0) && openPL(PL.r+PL.ndy, PL.c+PL.ndx)) {
+      PL.dx = PL.ndx; PL.dy = PL.ndy;
+    }
+    // Can we keep going in current direction?
+    if (!openPL(PL.r + PL.dy, PL.c + PL.dx)) {
+      PL.dx = 0; PL.dy = 0;
+    }
+  }
+}
+
+function eatTile(r, c) {
+  if (r<0||r>=ROWS||c<0||c>=COLS) return;
+  const v = maze[r][c];
+  if (v === 0) {
+    maze[r][c] = 2; score += 10; refreshHUD();
+  } else if (v === 3) {
+    maze[r][c] = 2; score += 50;
+    powerTimer = POWER_DUR;
+    kks.forEach(k => { k.scared=true; k.flash=false; });
+    refreshHUD();
+  } else if (v === 5) {
+    const i = INGS.findIndex(({pos:[ir,ic]})=>ir===r&&ic===c);
+    if (i>=0 && !collected.has(i)) {
+      maze[r][c] = 2;
+      collected.add(i);
+      score += 200;
+      refreshHUD(); refreshBurger(); checkWin();
+    }
+  }
+}
+
+// ── STEP KK ───────────────────────────────────────────────────────
+const DIRS = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
+
+function stepKK(kk) {
+  if (kk.dead) return;
+  const sp = kk.scared ? 0.05 : 0.075;
+  kk.prog += sp;
+
+  if (kk.prog >= 1) {
+    kk.r += kk.dy; kk.c += kk.dx;
+    kk.prog = 0;
+    if (kk.c < 0)     kk.c = COLS-1;
+    if (kk.c >= COLS) kk.c = 0;
+
+    // Pick next direction
+    let valid = DIRS.filter(d =>
+      !(d.dx === -kk.dx && d.dy === -kk.dy) &&
+      open(kk.r + d.dy, kk.c + d.dx)
+    );
+    if (!valid.length) valid = DIRS.filter(d => open(kk.r+d.dy, kk.c+d.dx));
+    if (!valid.length) return;
+
+    let chosen;
+    if (kk.scared) {
+      // Flee from Louise
+      chosen = valid.reduce((best, d) => {
+        const dist = Math.hypot((kk.c+d.dx)-PL.c, (kk.r+d.dy)-PL.r);
+        return dist > best.dist ? {d, dist} : best;
+      }, {d:valid[0], dist:0}).d;
+    } else if (Math.random() < 0.7) {
+      // Chase Louise
+      chosen = valid.reduce((best, d) => {
+        const dist = Math.hypot((kk.c+d.dx)-PL.c, (kk.r+d.dy)-PL.r);
+        return dist < best.dist ? {d, dist} : best;
+      }, {d:valid[0], dist:Infinity}).d;
+    } else {
+      chosen = valid[Math.random() * valid.length | 0];
+    }
+    kk.dx = chosen.dx; kk.dy = chosen.dy;
+  }
+}
+
+// ── COLLISIONS ────────────────────────────────────────────────────
+function checkCollisions() {
+  if (deathCD > 0) { deathCD--; return; }
+  const px = plPx(), py = plPy();
+  kks.forEach(kk => {
+    if (kk.dead) return;
+    if (Math.hypot(kk.px()-px, kk.py()-py) < T*0.7) {
+      if (kk.scared) {
+        kk.dead = true; score += 500; refreshHUD();
+        setTimeout(() => kk.reset(), 4000);
+      } else {
+        loseLife();
+      }
+    }
+  });
+}
+
+// ── POWER TIMER ───────────────────────────────────────────────────
+function tickPower() {
+  if (!powerTimer) return;
+  powerTimer--;
+  if (powerTimer < 80) {
+    const f = Math.floor(powerTimer/8) % 2 === 0;
+    kks.forEach(k => { if (k.scared) k.flash = f; });
+  }
+  if (powerTimer === 0) kks.forEach(k => { k.scared=false; k.flash=false; });
+  document.getElementById('pbar').style.width = (powerTimer/POWER_DUR*588)+'px';
+}
+
+// ── GAME EVENTS ───────────────────────────────────────────────────
+function loseLife() {
+  if (gs !== 'playing') return;
+  lives--; deathCD = 80; gs = 'dead'; refreshHUD();
+  setTimeout(() => {
+    if (lives <= 0) {
+      showOv('GAME OVER', `Score: ${score}`, 'PLAY AGAIN', () => startGame());
+    } else {
+      resetPL(); kks.forEach(k=>k.reset());
+      powerTimer = 0;
+      document.getElementById('pbar').style.width = '0';
+      gs = 'playing';
+    }
+  }, 1500);
+}
+
+function checkWin() {
+  if (collected.size >= INGS.length) {
+    gs = 'win';
+    setTimeout(() => showOv(
+      '🍔 BURGER COMPLETE!',
+      `You built a perfect burger!<br>Score: ${score} · Level ${level}`,
+      'NEXT LEVEL',
+      () => { level++; startGame(true); }
+    ), 400);
+  }
+}
+
+// ── HUD ───────────────────────────────────────────────────────────
+function refreshHUD() {
+  document.getElementById('sc').textContent = score;
+  document.getElementById('lv').textContent = level;
+  document.getElementById('li').textContent = '♥ '.repeat(Math.max(0,lives)).trim() || '☠';
+}
+function refreshBurger() {
+  const s = document.getElementById('slots');
+  s.innerHTML = '';
+  INGS.forEach(({name,em},i) => {
+    const d = document.createElement('div');
+    d.className = 'slot'+(collected.has(i)?' got':'');
+    d.innerHTML = `<span class="em">${em}</span>${name}`;
+    s.appendChild(d);
+  });
+}
+
+// ── OVERLAY ───────────────────────────────────────────────────────
+function showOv(title, text, btn, cb) {
+  gs = 'overlay';
+  document.getElementById('ovT').textContent = title;
+  document.getElementById('ovP').innerHTML = text;
+  document.getElementById('ovB').textContent = btn;
+  document.getElementById('ovB').onclick = () => {
+    document.getElementById('ov').style.display = 'none';
+    cb();
+  };
+  document.getElementById('ov').style.display = 'flex';
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+function startGame(keep=false) {
+  if (!keep) { score=0; lives=3; level=1; }
+  collected = new Set();
+  powerTimer = 0;
+  document.getElementById('pbar').style.width = '0';
+  freshMaze();
+  resetPL();
+  initKKs();
+  deathCD = 0;
+  refreshHUD(); refreshBurger();
+  gs = 'playing';
+}
+
+// ── INPUT ─────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key===' '||e.key==='Escape') {
+    if (gs==='playing') gs='paused';
+    else if (gs==='paused') gs='playing';
+    return;
+  }
+  if (gs !== 'playing') return;
+  if (e.key==='ArrowLeft'  ||e.key==='a'||e.key==='A') { PL.ndx=-1; PL.ndy=0; }
+  if (e.key==='ArrowRight' ||e.key==='d'||e.key==='D') { PL.ndx=1;  PL.ndy=0; }
+  if (e.key==='ArrowUp'    ||e.key==='w'||e.key==='W') { PL.ndx=0;  PL.ndy=-1; }
+  if (e.key==='ArrowDown'  ||e.key==='s'||e.key==='S') { PL.ndx=0;  PL.ndy=1;  }
+  e.preventDefault();
+});
+
+// Swipe support
+let ts=null;
+canvas.addEventListener('touchstart',e=>{ts={x:e.touches[0].clientX,y:e.touches[0].clientY};e.preventDefault();},{passive:false});
+canvas.addEventListener('touchend',e=>{
+  if (!ts) return;
+  const dx=e.changedTouches[0].clientX-ts.x, dy=e.changedTouches[0].clientY-ts.y;
+  if (Math.abs(dx)>Math.abs(dy)) { PL.ndx=dx>0?1:-1; PL.ndy=0; }
+  else { PL.ndx=0; PL.ndy=dy>0?1:-1; }
+  ts=null; e.preventDefault();
+},{passive:false});
+
+// ── GAME LOOP ─────────────────────────────────────────────────────
+let frame=0;
+function loop() {
+  requestAnimationFrame(loop);
+  frame++;
+
+  ctx.fillStyle = '#07070f';
+  ctx.fillRect(0, 0, W, H);
+
+  drawMaze();
+  drawIngredients();
+
+  if (gs === 'playing') {
+    stepPL();
+    kks.forEach(stepKK);
+    checkCollisions();
+    tickPower();
+  }
+
+  kks.forEach(drawKK);
+
+  // Draw Louise — blink on death
+  if (gs !== 'dead' || frame%10 < 6) drawLouise();
+
+  if (gs === 'paused') {
+    ctx.fillStyle = 'rgba(7,7,15,0.72)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#ff69b4';
+    ctx.font = 'bold 30px Courier New';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#ff1493'; ctx.shadowBlur = 10;
+    ctx.fillText('PAUSED', W/2, H/2);
+    ctx.shadowBlur = 0;
+    ctx.font = '14px Courier New';
+    ctx.fillStyle = '#888';
+    ctx.fillText('SPACE to resume', W/2, H/2+32);
+    ctx.textAlign = 'left';
+  }
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────
+refreshBurger();
+loop();
+document.getElementById('ovB').onclick = () => {
+  document.getElementById('ov').style.display = 'none';
+  startGame();
+};
+</script>
+</body>
+</html>
