@@ -146,7 +146,7 @@ const PL = {
   dx:0, dy:0,         // current direction (col delta, row delta)
   ndx:0, ndy:0,       // queued direction
   prog:0,             // 0..1 progress toward next cell
-  speed:0.07,         // cells per frame
+  speed:0.055,        // cells per frame
   anim:0,
 };
 function resetPL() {
@@ -447,7 +447,7 @@ const DIRS = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
 
 function stepKK(kk) {
   if (kk.dead) return;
-  const sp = kk.scared ? 0.025 : 0.045;
+  const sp = kk.scared ? 0.018 : 0.032;
   kk.prog += sp;
 
   if (kk.prog >= 1) {
